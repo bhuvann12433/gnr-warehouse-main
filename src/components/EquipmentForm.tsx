@@ -1,175 +1,168 @@
-import React, { useState, useEffect } from 'react';
-import { X, Save } from 'lucide-react';
-import { Equipment } from '../types/Equipment';
+import React, { useEffect, useState } from "react";
 
-interface EquipmentFormProps {
-  equipment?: Equipment | null;
-  onSave: (equipment: Partial<Equipment>) => Promise<void>;
+type EquipmentFormProps = {
+  equipment?: any | null; // existing equipment when editing
+  onSave: (data: any) => Promise<void>;
   onCancel: () => void;
-}
+};
 
-const EquipmentForm: React.FC<EquipmentFormProps> = ({
-  equipment,
-  onSave,
-  onCancel
-}) => {
-  const [formData, setFormData] = useState({
-    name: '',
-    category: 'Instruments' as Equipment['category'],
+const unitOptions = ["UNT", "PCS", "BOX", "SET", "NOS"];
+
+const EquipmentForm: React.FC<EquipmentFormProps> = ({ equipment, onSave, onCancel }) => {
+  const [form, setForm] = useState({
+    name: "",
+    category: "Instruments",
     quantity: 0,
     costPerUnit: 0,
-    notes: '',
+    notes: "",
+    hsnCode: "",
+    unit: "UNT",
+    // status counts mirror quantity by default
     statusCounts: {
       available: 0,
       in_use: 0,
       maintenance: 0
     }
   });
-  const [saving, setSaving] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (equipment) {
-      setFormData({
-        name: equipment.name,
-        category: equipment.category,
-        quantity: equipment.quantity,
-        costPerUnit: equipment.costPerUnit,
-        notes: equipment.notes,
-        statusCounts: { ...equipment.statusCounts }
+      setForm({
+        name: equipment.name || "",
+        category: equipment.category || "Instruments",
+        quantity: equipment.quantity ?? 0,
+        costPerUnit: equipment.costPerUnit ?? 0,
+        notes: equipment.notes ?? "",
+        hsnCode: equipment.hsnCode ?? "",
+        unit: equipment.unit ?? "UNT",
+        statusCounts: {
+          available: equipment.statusCounts?.available ?? equipment.quantity ?? 0,
+          in_use: equipment.statusCounts?.in_use ?? 0,
+          maintenance: equipment.statusCounts?.maintenance ?? 0
+        }
       });
     }
   }, [equipment]);
 
-  const validateForm = () => {
-    const newErrors: Record<string, string> = {};
-
-    if (!formData.name.trim()) {
-      newErrors.name = 'Equipment name is required';
+  // Keep statusCounts in sync when quantity changed (only if user hasn't manually changed counts)
+  useEffect(() => {
+    // If total of statusCounts differs from quantity, and statusCounts was previously synced, keep it synced.
+    const totalStatus = form.statusCounts.available + form.statusCounts.in_use + form.statusCounts.maintenance;
+    if (totalStatus !== form.quantity) {
+      // If user explicitly set status counts earlier we won't override. Heuristics: if in edit mode and equipment provided, keep existing counts.
+      // For new item, sync available = quantity.
+      setForm((prev) => ({
+        ...prev,
+        statusCounts: {
+          ...prev.statusCounts,
+          available: prev.quantity
+        }
+      }));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.quantity]);
 
-    if (formData.quantity < 0) {
-      newErrors.quantity = 'Quantity must be non-negative';
+  const handleChange = (k: string, v: any) => {
+    if (k.startsWith("statusCounts.")) {
+      const key = k.split(".")[1];
+      setForm((prev) => ({ ...prev, statusCounts: { ...prev.statusCounts, [key]: Number(v) } }));
+    } else if (k === "quantity") {
+      const n = Number(v || 0);
+      setForm((prev) => ({ ...prev, quantity: n }));
+    } else if (k === "costPerUnit") {
+      const n = Number(v || 0);
+      setForm((prev) => ({ ...prev, costPerUnit: n }));
+    } else {
+      setForm((prev) => ({ ...prev, [k]: v }));
     }
-
-    if (formData.costPerUnit < 0) {
-      newErrors.costPerUnit = 'Cost per unit must be non-negative';
-    }
-
-    const totalStatus = formData.statusCounts.available + formData.statusCounts.in_use + formData.statusCounts.maintenance;
-    if (totalStatus !== formData.quantity) {
-      newErrors.statusCounts = `Status counts (${totalStatus}) must equal total quantity (${formData.quantity})`;
-    }
-
-    if (formData.statusCounts.available < 0 || formData.statusCounts.in_use < 0 || formData.statusCounts.maintenance < 0) {
-      newErrors.statusCounts = 'Status counts cannot be negative';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!validateForm()) {
+
+    // Basic validation
+    if (!form.name.trim()) {
+      alert("Please enter equipment name.");
+      return;
+    }
+    if (!form.category) {
+      alert("Please select a category.");
+      return;
+    }
+    if (form.quantity < 0) {
+      alert("Quantity cannot be negative.");
+      return;
+    }
+    if (form.costPerUnit < 0) {
+      alert("Cost per unit cannot be negative.");
       return;
     }
 
-    setSaving(true);
+    // Ensure statusCounts sum equals quantity (backend enforces this as well)
+    const sumStatus = form.statusCounts.available + form.statusCounts.in_use + form.statusCounts.maintenance;
+    if (sumStatus !== form.quantity) {
+      // If mismatch, ask user to confirm auto-sync
+      if (!window.confirm(`Status counts (${sumStatus}) do not equal quantity (${form.quantity}).\nClick OK to auto-sync available = quantity, Cancel to adjust manually.`)) {
+        return;
+      }
+
+      // auto-sync available
+      form.statusCounts.available = form.quantity;
+      form.statusCounts.in_use = 0;
+      form.statusCounts.maintenance = 0;
+    }
+
+    // Prepare payload - include hsnCode and unit
+    const payload: any = {
+      name: form.name,
+      category: form.category,
+      quantity: Number(form.quantity),
+      costPerUnit: Number(form.costPerUnit),
+      notes: form.notes,
+      hsnCode: form.hsnCode,
+      unit: form.unit,
+      statusCounts: {
+        available: Number(form.statusCounts.available),
+        in_use: Number(form.statusCounts.in_use),
+        maintenance: Number(form.statusCounts.maintenance)
+      }
+    };
+
     try {
-      await onSave(formData);
-    } catch (error) {
-      console.error('Error saving equipment:', error);
-    } finally {
-      setSaving(false);
+      await onSave(payload);
+    } catch (err: any) {
+      console.error(err);
+      alert("Failed to save equipment: " + (err?.message || err));
     }
-  };
-
-  const handleInputChange = (field: string, value: any) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-    
-    // Clear error when user starts typing
-    if (errors[field]) {
-      setErrors(prev => ({
-        ...prev,
-        [field]: ''
-      }));
-    }
-  };
-
-  const handleStatusCountChange = (status: 'available' | 'in_use' | 'maintenance', value: number) => {
-    setFormData(prev => ({
-      ...prev,
-      statusCounts: {
-        ...prev.statusCounts,
-        [status]: Math.max(0, value)
-      }
-    }));
-    
-    if (errors.statusCounts) {
-      setErrors(prev => ({
-        ...prev,
-        statusCounts: ''
-      }));
-    }
-  };
-
-  const autoDistributeStatus = () => {
-    setFormData(prev => ({
-      ...prev,
-      statusCounts: {
-        available: prev.quantity,
-        in_use: 0,
-        maintenance: 0
-      }
-    }));
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-gray-900">
-            {equipment ? 'Edit Equipment' : 'Add New Equipment'}
-          </h2>
-          <button
-            onClick={onCancel}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            <X className="h-6 w-6" />
-          </button>
-        </div>
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-10">
+      <div className="bg-white w-[95%] md:w-3/4 lg:w-1/2 rounded-xl shadow-xl border">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">{equipment ? "Edit Equipment" : "Add Equipment"}</h2>
+            <button type="button" onClick={onCancel} className="text-sm text-gray-600 px-2 py-1">Close</button>
+          </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Equipment Name *
-              </label>
+              <label className="block text-sm font-medium mb-1">Name</label>
               <input
                 type="text"
-                value={formData.name}
-                onChange={(e) => handleInputChange('name', e.target.value)}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                  errors.name ? 'border-red-300' : 'border-gray-300'
-                }`}
-                placeholder="Enter equipment name"
+                value={form.name}
+                onChange={(e) => handleChange("name", e.target.value)}
+                className="border px-3 py-2 rounded w-full"
+                required
               />
-              {errors.name && <p className="mt-1 text-sm text-red-600">{errors.name}</p>}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Category *
-              </label>
+              <label className="block text-sm font-medium mb-1">Category</label>
               <select
-                value={formData.category}
-                onChange={(e) => handleInputChange('category', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={form.category}
+                onChange={(e) => handleChange("category", e.target.value)}
+                className="border px-3 py-2 rounded w-full"
               >
                 <option value="Instruments">Instruments</option>
                 <option value="Consumables">Consumables</option>
@@ -179,127 +172,100 @@ const EquipmentForm: React.FC<EquipmentFormProps> = ({
               </select>
             </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Total Quantity *
-              </label>
+              <label className="block text-sm font-medium mb-1">Quantity</label>
               <input
                 type="number"
-                min="0"
-                value={formData.quantity}
-                onChange={(e) => handleInputChange('quantity', parseInt(e.target.value) || 0)}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                  errors.quantity ? 'border-red-300' : 'border-gray-300'
-                }`}
-                placeholder="Enter quantity"
+                value={form.quantity}
+                onChange={(e) => handleChange("quantity", e.target.value)}
+                className="border px-3 py-2 rounded w-full"
+                min={0}
               />
-              {errors.quantity && <p className="mt-1 text-sm text-red-600">{errors.quantity}</p>}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Cost Per Unit *
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={formData.costPerUnit}
-                onChange={(e) => handleInputChange('costPerUnit', parseFloat(e.target.value) || 0)}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                  errors.costPerUnit ? 'border-red-300' : 'border-gray-300'
-                }`}
-                placeholder="Enter cost per unit"
-              />
-              {errors.costPerUnit && <p className="mt-1 text-sm text-red-600">{errors.costPerUnit}</p>}
-            </div>
-          </div>
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <label className="block text-sm font-medium text-gray-700">
-                Status Distribution *
-              </label>
-              <button
-                type="button"
-                onClick={autoDistributeStatus}
-                className="text-sm text-blue-600 hover:text-blue-700 underline"
+              <label className="block text-sm font-medium mb-1">Unit</label>
+              <select
+                value={form.unit}
+                onChange={(e) => handleChange("unit", e.target.value)}
+                className="border px-3 py-2 rounded w-full"
               >
-                Auto-fill (all available)
-              </button>
+                {unitOptions.map((u) => (
+                  <option key={u} value={u}>{u}</option>
+                ))}
+              </select>
             </div>
-            <div className="grid grid-cols-3 gap-4">
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Cost Per Unit (₹)</label>
+              <input
+                type="number"
+                value={form.costPerUnit}
+                onChange={(e) => handleChange("costPerUnit", e.target.value)}
+                className="border px-3 py-2 rounded w-full"
+                min={0}
+                step="0.01"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">HSN Code</label>
+              <input
+                type="text"
+                value={form.hsnCode}
+                onChange={(e) => handleChange("hsnCode", e.target.value)}
+                className="border px-3 py-2 rounded w-full"
+                placeholder="Enter HSN code (optional)"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1">Notes</label>
+              <textarea
+                value={form.notes}
+                onChange={(e) => handleChange("notes", e.target.value)}
+                className="border px-3 py-2 rounded w-full"
+                rows={3}
+              />
+            </div>
+
+            <div className="md:col-span-2 grid grid-cols-3 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">
-                  Available
-                </label>
+                <label className="block text-sm font-medium mb-1">Available</label>
                 <input
                   type="number"
-                  min="0"
-                  value={formData.statusCounts.available}
-                  onChange={(e) => handleStatusCountChange('available', parseInt(e.target.value) || 0)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                  value={form.statusCounts.available}
+                  onChange={(e) => handleChange("statusCounts.available", e.target.value)}
+                  className="border px-3 py-2 rounded w-full"
+                  min={0}
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">
-                  In Use
-                </label>
+                <label className="block text-sm font-medium mb-1">In Use</label>
                 <input
                   type="number"
-                  min="0"
-                  value={formData.statusCounts.in_use}
-                  onChange={(e) => handleStatusCountChange('in_use', parseInt(e.target.value) || 0)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  value={form.statusCounts.in_use}
+                  onChange={(e) => handleChange("statusCounts.in_use", e.target.value)}
+                  className="border px-3 py-2 rounded w-full"
+                  min={0}
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">
-                  Maintenance
-                </label>
+                <label className="block text-sm font-medium mb-1">Maintenance</label>
                 <input
                   type="number"
-                  min="0"
-                  value={formData.statusCounts.maintenance}
-                  onChange={(e) => handleStatusCountChange('maintenance', parseInt(e.target.value) || 0)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                  value={form.statusCounts.maintenance}
+                  onChange={(e) => handleChange("statusCounts.maintenance", e.target.value)}
+                  className="border px-3 py-2 rounded w-full"
+                  min={0}
                 />
               </div>
             </div>
-            {errors.statusCounts && <p className="mt-1 text-sm text-red-600">{errors.statusCounts}</p>}
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Notes
-            </label>
-            <textarea
-              value={formData.notes}
-              onChange={(e) => handleInputChange('notes', e.target.value)}
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Enter any additional notes..."
-            />
-          </div>
-
-          <div className="flex items-center justify-end space-x-4 pt-4 border-t border-gray-200">
-            <button
-              type="button"
-              onClick={onCancel}
-              className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="inline-flex items-center px-4 py-2 text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-            >
-              <Save className="h-4 w-4 mr-2" />
-              {saving ? 'Saving...' : equipment ? 'Update Equipment' : 'Add Equipment'}
-            </button>
+          <div className="flex items-center justify-end gap-3 pt-4">
+            <button type="button" onClick={onCancel} className="px-4 py-2 border rounded">Cancel</button>
+            <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded">Save</button>
           </div>
         </form>
       </div>

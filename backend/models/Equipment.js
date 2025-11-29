@@ -6,24 +6,42 @@ const equipmentSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+
   category: {
     type: String,
     required: true,
     enum: ['Instruments', 'Consumables', 'Diagnostic', 'Furniture', 'Electronics'],
     trim: true
   },
+
   quantity: {
     type: Number,
     required: true,
     min: 0,
     default: 0
   },
+
   costPerUnit: {
     type: Number,
     required: true,
     min: 0,
     default: 0
   },
+
+  // ⭐ NEW FIELD - HSN CODE
+  hsnCode: {
+    type: String,
+    trim: true,
+    default: ""
+  },
+
+  // ⭐ NEW FIELD - UNIT (UNT / PCS / BOX)
+  unit: {
+    type: String,
+    trim: true,
+    default: "UNT"
+  },
+
   statusCounts: {
     available: {
       type: Number,
@@ -50,6 +68,7 @@ const equipmentSchema = new mongoose.Schema({
     trim: true,
     default: ''
   }
+
 }, {
   timestamps: true
 });

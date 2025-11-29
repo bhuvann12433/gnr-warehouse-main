@@ -1,12 +1,18 @@
 // frontend/src/App.tsx
-import React, { useState, useEffect } from 'react';
-import { Package, Plus, Search, Filter } from 'lucide-react';
-import LoginPage from './components/LoginPage';
-import Dashboard from './components/Dashboard';
-import EquipmentTable from './components/EquipmentTable';
-import EquipmentForm from './components/EquipmentForm';
-import CategorySidebar from './components/CategorySidebar';
-import { Equipment, EquipmentStats } from './types/Equipment';
+import React, { useState, useEffect } from "react";
+import { Package, Plus } from "lucide-react";
+import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
+
+import LoginPage from "./components/LoginPage";
+import Dashboard from "./components/Dashboard";
+import EquipmentTable from "./components/EquipmentTable";
+import EquipmentForm from "./components/EquipmentForm";
+import CategorySidebar from "./components/CategorySidebar";
+import InvoicePage from "./components/InvoicePage";
+import CartPage from "./components/CartPage";
+import ExhaustedPage from "./components/ExhaustedPage";
+
+import { Equipment, EquipmentStats } from "./types/Equipment";
 
 // ==========================
 // API BASE URL
@@ -14,9 +20,6 @@ import { Equipment, EquipmentStats } from './types/Equipment';
 const API_BASE =
   import.meta.env.VITE_API_BASE ||
   `http://${window.location.hostname}:5000/api`;
-
-console.log("ENV:", import.meta.env);
-console.log("🌐 API_BASE =", API_BASE);
 
 // ==========================
 // HTTP Helper
@@ -74,36 +77,6 @@ async function fetchStats(): Promise<EquipmentStats> {
 }
 
 // ==========================
-// Status helper functions
-// ==========================
-function readStatusCounts(item: any) {
-  if (item?.counts) {
-    return {
-      available: Number(item.counts.available || 0),
-      in_use: Number(item.counts.in_use || 0),
-      maintenance: Number(item.counts.maintenance || 0),
-    };
-  }
-  return {
-    available: Number(item.available || 0),
-    in_use: Number(item.in_use || 0),
-    maintenance: Number(item.maintenance || 0),
-  };
-}
-
-function applyChangeToCounts(
-  counts: any,
-  status: "available" | "in_use" | "maintenance",
-  change: number
-) {
-  return { ...counts, [status]: counts[status] + change };
-}
-
-function sumCounts(obj: any) {
-  return Object.values(obj).reduce((a: number, b: number) => a + Number(b), 0);
-}
-
-// ==========================
 // MAIN APP
 // ==========================
 function App() {
@@ -120,9 +93,89 @@ function App() {
   const [loading, setLoading] = useState<boolean>(true);
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
 
-  // ==========================
-  // LOGIN
-  // ==========================
+  // --------------------------
+  // CART
+  // --------------------------
+  const [cart, setCart] = useState<
+    Record<
+      string,
+      { id: string; name: string; qty: number; unitPrice: number; hsnCode?: string; unit?: string }
+    >
+  >(() => {
+    try {
+      const raw = localStorage.getItem("gnr_cart");
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      Object.keys(parsed).forEach((k) => {
+        parsed[k].hsnCode = parsed[k].hsnCode || "";
+        parsed[k].unit = parsed[k].unit || "UNT";
+      });
+      return parsed;
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("gnr_cart", JSON.stringify(cart));
+    } catch {}
+  }, [cart]);
+
+  const updateCart = (id: string, qty: number) => {
+    setCart((prev) => {
+      const copy = { ...prev };
+      if (qty <= 0) {
+        delete copy[id];
+      } else {
+        const existing = copy[id] || { id, name: "Item", unitPrice: 0, hsnCode: "", unit: "UNT" };
+        copy[id] = { ...existing, qty };
+      }
+      return copy;
+    });
+  };
+
+  const addToCart = async (item: Equipment) => {
+    setCart((prev) => {
+      const existing =
+        prev[item._id] || {
+          id: item._id,
+          name: item.name,
+          qty: 0,
+          unitPrice: item.costPerUnit || 0,
+          hsnCode: (item as any).hsnCode || "",
+          unit: (item as any).unit || "UNT",
+        };
+      return {
+        ...prev,
+        [item._id]: { ...existing, qty: existing.qty + 1 },
+      };
+    });
+
+    try {
+      await handleUpdateStatus(item._id, "available", -1);
+      await loadData();
+    } catch {}
+  };
+
+  const removeFromCart = async (id: string) => {
+    setCart((prev) => {
+      const copy = { ...prev };
+      if (!copy[id]) return copy;
+      const newQty = copy[id].qty - 1;
+      if (newQty <= 0) delete copy[id];
+      else copy[id] = { ...copy[id], qty: newQty };
+      return copy;
+    });
+
+    try {
+      await handleUpdateStatus(id, "available", +1);
+      await loadData();
+    } catch {}
+  };
+
+  const clearCart = () => setCart({});
+
   const handleLogin = async (username: string, password: string) => {
     try {
       const res = await apiFetch("/auth/login", {
@@ -135,9 +188,9 @@ function App() {
         setIsLoggedIn(true);
         return { ok: true };
       }
-      return { ok: false, message: "No token received" };
-    } catch (err: any) {
-      return { ok: false, message: err.message };
+      return { ok: false };
+    } catch {
+      return { ok: false };
     }
   };
 
@@ -146,9 +199,6 @@ function App() {
     setIsLoggedIn(false);
   };
 
-  // ==========================
-  // LOAD DATA
-  // ==========================
   useEffect(() => {
     if (!isLoggedIn) return;
     loadData();
@@ -167,17 +217,11 @@ function App() {
       ]);
       setEquipment(eq);
       setStats(st);
-    } catch (err) {
-      setEquipment([]);
-      setStats(null);
     } finally {
       setLoading(false);
     }
   };
 
-  // ==========================
-  // CRUD ACTIONS
-  // ==========================
   const handleAddEquipment = () => {
     setEditingItem(null);
     setShowForm(true);
@@ -211,101 +255,137 @@ function App() {
     await loadData();
   };
 
-  // ==========================
-  // STATUS UPDATE
-  // ==========================
-  const handleUpdateStatus = async (id, status, change) => {
+  const handleUpdateStatus = async (id: string, status: any, change: number) => {
     await apiFetch(`/equipment/${id}/status`, {
       method: "PATCH",
       body: JSON.stringify({ status, change }),
     });
-    await loadData();
   };
 
-  // ==========================
-  // AUTH / LOADING UI
-  // ==========================
   if (!isLoggedIn) return <LoginPage onLogin={handleLogin} />;
 
   if (loading && !stats)
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p>Loading...</p>
-      </div>
-    );
+    return <div className="p-10 text-center">Loading...</div>;
 
-  // ==========================
-  // MAIN UI
-  // ==========================
   return (
-    <div className="min-h-screen">
-      <header className="bg-white shadow-sm">
-        <div className="p-4 flex justify-between">
-          <h1 className="font-bold text-xl flex items-center gap-2">
-            <Package className="text-blue-600" /> GNR SURGICALS
-          </h1>
+    <BrowserRouter>
+      <Routes>
+        {/* HOME */}
+        <Route
+          path="/"
+          element={
+            <div>
+              <header className="bg-white shadow-sm">
+                <div className="p-4 flex justify-between items-center">
+                  <h1 className="text-xl font-bold flex items-center gap-2">
+                    <Package className="text-blue-600" /> GNR SURGICALS
+                  </h1>
 
-          <div className="flex gap-3">
-            <input
-              type="text"
-              className="border px-3 py-1 rounded"
-              placeholder="Search..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+                  <div className="flex gap-3 items-center">
+                    <input
+                      type="text"
+                      className="border px-3 py-1 rounded"
+                      placeholder="Search..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+
+                    <button
+                      onClick={handleAddEquipment}
+                      className="bg-blue-600 text-white px-3 py-1 rounded"
+                    >
+                      <Plus className="w-4 h-4 mr-1" /> Add
+                    </button>
+
+                    <Link to="/cart" className="bg-yellow-600 text-white px-3 py-1 rounded">
+                      Cart ({Object.values(cart).reduce((s, a) => s + a.qty, 0)})
+                    </Link>
+
+                    <Link to="/invoice" className="bg-green-600 text-white px-3 py-1 rounded">
+                      Invoice
+                    </Link>
+
+                    <Link to="/exhausted" className="bg-red-600 text-white px-3 py-1 rounded">
+                      Exhausted
+                    </Link>
+
+                    <button onClick={handleLogout} className="px-3 py-1 border rounded">
+                      Logout
+                    </button>
+                  </div>
+                </div>
+              </header>
+
+              <div className="flex">
+                <CategorySidebar
+                  categories={stats?.categoryTotals || {}}
+                  selectedCategory={selectedCategory}
+                  selectedStatus={selectedStatus}
+                  onCategoryChange={setSelectedCategory}
+                  onStatusChange={setSelectedStatus}
+                  isOpen={sidebarOpen}
+                  onClose={() => setSidebarOpen(false)}
+                />
+
+                <main className="flex-1 p-4">
+                  {stats && <Dashboard stats={stats} />}
+                  <EquipmentTable
+                    equipment={equipment}
+                    onEdit={handleEditEquipment}
+                    onDelete={handleDeleteEquipment}
+                    onUpdateStatus={handleUpdateStatus}
+                    loading={loading}
+                    addToCart={addToCart}
+                    removeFromCart={removeFromCart}
+                  />
+                </main>
+              </div>
+
+              {showForm && (
+                <EquipmentForm
+                  equipment={editingItem}
+                  onSave={handleSaveEquipment}
+                  onCancel={() => {
+                    setShowForm(false);
+                    setEditingItem(null);
+                  }}
+                />
+              )}
+            </div>
+          }
+        />
+
+        {/* CART */}
+        <Route
+          path="/cart"
+          element={
+            <CartPage
+              cart={cart}
+              updateCart={updateCart}
+              removeFromCart={(id) => updateCart(id, 0)}
             />
-
-            <button
-              onClick={() => handleAddEquipment()}
-              className="bg-blue-600 text-white px-3 py-1 rounded flex items-center"
-            >
-              <Plus className="w-4 h-4 mr-1" /> Add
-            </button>
-
-            <button
-              onClick={handleLogout}
-              className="px-3 py-1 border rounded"
-            >
-              Logout
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <div className="flex">
-        <CategorySidebar
-          categories={stats?.categoryTotals || {}}
-          selectedCategory={selectedCategory}
-          selectedStatus={selectedStatus}
-          onCategoryChange={setSelectedCategory}
-          onStatusChange={setSelectedStatus}
-          isOpen={sidebarOpen}
-          onClose={() => setSidebarOpen(false)}
+          }
         />
 
-        <main className="flex-1 p-4">
-          {stats && <Dashboard stats={stats} />}
-
-          <EquipmentTable
-            equipment={equipment}
-            onEdit={handleEditEquipment}
-            onDelete={handleDeleteEquipment}
-            onUpdateStatus={handleUpdateStatus}
-            loading={loading}
-          />
-        </main>
-      </div>
-
-      {showForm && (
-        <EquipmentForm
-          equipment={editingItem}
-          onSave={handleSaveEquipment}
-          onCancel={() => {
-            setShowForm(false);
-            setEditingItem(null);
-          }}
+        {/* INVOICE */}
+        <Route
+          path="/invoice"
+          element={
+            <InvoicePage cart={cart} updateCart={updateCart} clearCart={clearCart} gstPercentage={5} />
+          }
         />
-      )}
-    </div>
+
+        {/* EXHAUSTED PAGE */}
+        <Route
+          path="/exhausted"
+          element={
+            <ExhaustedPage
+              items={equipment.filter((i) => i.statusCounts.available === 0)}
+            />
+          }
+        />
+      </Routes>
+    </BrowserRouter>
   );
 }
 
