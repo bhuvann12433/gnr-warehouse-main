@@ -1,5 +1,5 @@
 // frontend/src/App.tsx
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Package, Plus } from "lucide-react";
 import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 
