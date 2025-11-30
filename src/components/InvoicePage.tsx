@@ -183,7 +183,8 @@ export default function InvoicePage({
         amount: it.unitPrice * it.qty,
       }));
 
-      await fetch("https://gnr-warehouse-main-backend.onrender.com/api/invoice", {
+      await fetch("https://gnr-surgicals-backend.onrender.com/api/invoice", {
+
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
