@@ -46,39 +46,11 @@ function formatINR(n: number) {
 function numberToWords(num: number) {
   if (num === 0) return "Zero";
   const a = [
-    "",
-    "One",
-    "Two",
-    "Three",
-    "Four",
-    "Five",
-    "Six",
-    "Seven",
-    "Eight",
-    "Nine",
-    "Ten",
-    "Eleven",
-    "Twelve",
-    "Thirteen",
-    "Fourteen",
-    "Fifteen",
-    "Sixteen",
-    "Seventeen",
-    "Eighteen",
-    "Nineteen",
+    "", "One","Two","Three","Four","Five","Six","Seven","Eight","Nine",
+    "Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen",
+    "Seventeen","Eighteen","Nineteen"
   ];
-  const b = [
-    "",
-    "",
-    "Twenty",
-    "Thirty",
-    "Forty",
-    "Fifty",
-    "Sixty",
-    "Seventy",
-    "Eighty",
-    "Ninety",
-  ];
+  const b = ["","", "Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];
 
   function twoDigit(n: number) {
     if (n < 20) return a[n];
@@ -125,6 +97,7 @@ export default function InvoicePage({
 
   const [invoiceNo, setInvoiceNo] = useState(() => `GTSAL${Date.now().toString().slice(-6)}`);
   const [invoiceDate, setInvoiceDate] = useState(() => new Date().toISOString().slice(0, 10));
+
   const [dueDate, setDueDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 30);
@@ -140,9 +113,7 @@ export default function InvoicePage({
   const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
 
   const initialHSN: Record<string, string> = {};
-  Object.keys(cart).forEach((k) => {
-    initialHSN[k] = "";
-  });
+  Object.keys(cart).forEach((k) => (initialHSN[k] = ""));
   const [hsnMap, setHsnMap] = useState<Record<string, string>>(initialHSN);
 
   useEffect(() => {
@@ -176,9 +147,7 @@ export default function InvoicePage({
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => {
-      setLogoPreview(String(reader.result));
-    };
+    reader.onload = () => setLogoPreview(String(reader.result));
     reader.readAsDataURL(f);
   };
 
@@ -188,9 +157,7 @@ export default function InvoicePage({
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => {
-      setSignaturePreview(String(reader.result));
-    };
+    reader.onload = () => setSignaturePreview(String(reader.result));
     reader.readAsDataURL(f);
   };
 
@@ -201,18 +168,51 @@ export default function InvoicePage({
     window.print();
   };
 
-  const handleFinalize = () => {
-    if (confirm("Finalize invoice and clear cart?")) {
+  // ============================================================
+  // ⭐ FINALIZE — SAVE INVOICE + DEDUCT STOCK + CLEAR CART
+  // ============================================================
+  const handleFinalize = async () => {
+    if (!confirm("Finalize invoice and update stock?")) return;
+
+    try {
+      const itemsPayload = items.map((it) => ({
+        id: it.id,
+        name: it.name,
+        qty: it.qty,
+        unitPrice: it.unitPrice,
+        amount: it.unitPrice * it.qty,
+      }));
+
+      await fetch("https://gnr-warehouse-main-backend.onrender.com/api/invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          invoiceNo,
+          date: invoiceDate,
+          dueDate,
+          billTo,
+          billAddress,
+          shipTo,
+          shipAddress,
+          items: itemsPayload,
+          subtotal,
+          gst: gstTotal,
+          total: grandTotal,
+        }),
+      });
+
       clearCart();
       navigate("/");
+
+    } catch (err) {
+      alert("Error finalizing invoice");
+      console.error(err);
     }
   };
 
-  const amountInWords = `${numberToWords(Math.floor(grandTotal))} Rupees${grandTotal % 1 ? " and " + Math.round((grandTotal % 1) * 100) + " Paise" : ""}`;
-
-  const onHSNChange = (id: string, value: string) => {
-    setHsnMap((prev) => ({ ...prev, [id]: value }));
-  };
+  const amountInWords = `${numberToWords(Math.floor(grandTotal))} Rupees${
+    grandTotal % 1 ? " and " + Math.round((grandTotal % 1) * 100) + " Paise" : ""
+  }`;
 
   return (
     <div className="p-6">
@@ -249,6 +249,8 @@ export default function InvoicePage({
       </div>
 
       {/* Invoice Layout */}
+      {/* ⭐ Entire UI below is unchanged from your original file ⭐ */}
+
       <div className="bg-white p-6" style={{ maxWidth: 900, margin: "0 auto", boxShadow: "0 2px 6px rgba(0,0,0,0.08)" }}>
 
         {/* Header */}
@@ -293,7 +295,6 @@ export default function InvoicePage({
           <div className="border rounded p-3">
             <div className="text-xs text-blue-700 font-semibold mb-1">BILL TO</div>
 
-            {/* Searchable Dropdown */}
             <SearchableDropdown
               list={hospitalList}
               value={billTo}
@@ -345,7 +346,7 @@ export default function InvoicePage({
                       <td className="p-2 text-sm border-b">
                         <input
                           value={hsnMap[it.id] || ""}
-                          onChange={(e) => onHSNChange(it.id, e.target.value)}
+                          onChange={(e) => setHsnMap(prev => ({ ...prev, [it.id]: e.target.value }))}
                           placeholder="HSN"
                           className="border-b text-sm"
                         />
@@ -362,7 +363,7 @@ export default function InvoicePage({
           </table>
         </div>
 
-        {/* Subtotal + Tax */}
+        {/* Subtotal */}
         <div className="flex justify-between items-start gap-6">
           <div style={{ width: "55%" }}>
             <div className="bg-gray-50 p-3 rounded text-sm">
@@ -419,6 +420,7 @@ export default function InvoicePage({
             )}
           </div>
         </div>
+
       </div>
 
       <style>{`
@@ -428,6 +430,7 @@ export default function InvoicePage({
           html, body { background: white; }
         }
       `}</style>
+
     </div>
   );
 }

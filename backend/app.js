@@ -6,30 +6,29 @@ import dotenv from 'dotenv';
 import authRoutes from './routes/auth.js';
 import equipmentRoutes from './routes/equipment.js';
 import statsRoutes from './routes/stats.js';
+import invoiceRoutes from './routes/invoices.js';   // ⭐ ADDED
 
 dotenv.config();
 
 const app = express();
 
 // ==========================
-// ⭐ FINAL, FULLY FIXED CORS CONFIG
+// ⭐ FINAL CORS CONFIG
 // ==========================
-
 const allowedOrigins = [
-  'https://gnr-warehouse-main.vercel.app',  // your frontend domain
-  'https://*.vercel.app',                   // allow Vercel preview deployments
-  'http://localhost:5173',                  // local dev
+  'https://gnr-warehouse-main.vercel.app',
+  'https://*.vercel.app',
+  'http://localhost:5173',
   'http://127.0.0.1:5173'
 ];
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin) return callback(null, true); // allow server-to-server & Postman
+      if (!origin) return callback(null, true);
 
       const isAllowed = allowedOrigins.some((allowed) => {
         if (allowed.includes('*')) {
-          // wildcard support
           const pattern = new RegExp('^' + allowed.replace('*', '.*') + '$');
           return pattern.test(origin);
         }
@@ -37,10 +36,8 @@ app.use(
       });
 
       if (isAllowed) return callback(null, true);
-
       return callback(new Error(`CORS blocked: Origin ${origin} is not allowed`));
     },
-
     credentials: true,
     methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
@@ -48,7 +45,6 @@ app.use(
   })
 );
 
-// allow OPTIONS for all routes
 app.options('*', cors());
 
 // ==========================
@@ -63,6 +59,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/auth', authRoutes);
 app.use('/api/equipment', equipmentRoutes);
 app.use('/api/stats', statsRoutes);
+app.use('/api/invoice', invoiceRoutes);   // ⭐ ADDED — FIXES YOUR ISSUE
 
 // ==========================
 //  ROOT ROUTE
