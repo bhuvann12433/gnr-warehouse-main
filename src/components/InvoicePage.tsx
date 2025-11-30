@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Printer, Camera, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import SearchableDropdown from "./SearchableDropdown";
 
 type CartItem = {
   id: string;
@@ -14,8 +15,18 @@ interface InvoicePageProps {
   cart: Record<string, CartItem>;
   updateCart: (id: string, qty: number) => void;
   clearCart: () => void;
-  gstPercentage?: number; // total GST percent (default 5)
+  gstPercentage?: number;
 }
+
+const hospitalList = [
+  "Amulya Nursing Home",
+  "Guntur General Hospital",
+  "Ramesh Hospitals",
+  "Aayush Hospital",
+  "NRI General Hospital",
+  "Madhu Multi Speciality",
+  "Madalavarapu Hospital",
+];
 
 const defaultBankDetails = {
   name: "GNR SURGICALS",
@@ -32,7 +43,6 @@ function formatINR(n: number) {
   }).format(n || 0);
 }
 
-/* Convert number to words - supports up to crores. Indian grouping. */
 function numberToWords(num: number) {
   if (num === 0) return "Zero";
   const a = [
@@ -113,7 +123,6 @@ export default function InvoicePage({
 }: InvoicePageProps) {
   const navigate = useNavigate();
 
-  // Invoice metadata
   const [invoiceNo, setInvoiceNo] = useState(() => `GTSAL${Date.now().toString().slice(-6)}`);
   const [invoiceDate, setInvoiceDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [dueDate, setDueDate] = useState(() => {
@@ -122,31 +131,26 @@ export default function InvoicePage({
     return d.toISOString().slice(0, 10);
   });
 
-  // Hospital / ship details
-  const [billTo, setBillTo] = useState("AMULYA NURSING HOME");
+  const [billTo, setBillTo] = useState("Amulya Nursing Home");
   const [billAddress, setBillAddress] = useState("Guntur Rd, Barampet, NARASARAOPET, Andhra Pradesh, 522601");
   const [shipTo, setShipTo] = useState(billTo);
   const [shipAddress, setShipAddress] = useState(billAddress);
 
-  // Upload logo & signature
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
 
-  // HSN codes map and editable per-item data
   const initialHSN: Record<string, string> = {};
   Object.keys(cart).forEach((k) => {
-    initialHSN[k] = ""; // user can add
+    initialHSN[k] = "";
   });
   const [hsnMap, setHsnMap] = useState<Record<string, string>>(initialHSN);
 
-  // Regenerate hsnMap when cart changes (preserve existing entries)
   useEffect(() => {
     setHsnMap((prev) => {
       const copy = { ...prev };
       Object.keys(cart).forEach((id) => {
         if (!(id in copy)) copy[id] = "";
       });
-      // remove keys not in cart
       Object.keys(copy).forEach((k) => {
         if (!cart[k]) delete copy[k];
       });
@@ -191,7 +195,6 @@ export default function InvoicePage({
   };
 
   const handlePrint = () => {
-    // Minimal validation
     if (!billTo.trim()) {
       if (!confirm("Bill To is empty. Print anyway?")) return;
     }
@@ -199,9 +202,7 @@ export default function InvoicePage({
   };
 
   const handleFinalize = () => {
-    // Optionally post invoice to server here
     if (confirm("Finalize invoice and clear cart?")) {
-      // You might want to send invoice object to server here
       clearCart();
       navigate("/");
     }
@@ -209,37 +210,31 @@ export default function InvoicePage({
 
   const amountInWords = `${numberToWords(Math.floor(grandTotal))} Rupees${grandTotal % 1 ? " and " + Math.round((grandTotal % 1) * 100) + " Paise" : ""}`;
 
-  // small helpers
   const onHSNChange = (id: string, value: string) => {
     setHsnMap((prev) => ({ ...prev, [id]: value }));
   };
 
-  // print styles: hide controls
   return (
     <div className="p-6">
-      {/* Controls - hidden in print */}
+
+      {/* Controls */}
       <div className="mb-4 print:hidden">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="px-3 py-1 border rounded">Back</button>
+
+          <button onClick={() => navigate(-1)} className="px-3 py-1 border rounded">
+            Back
+          </button>
 
           <label className="flex items-center gap-2 px-3 py-1 border rounded cursor-pointer">
             <Camera /> Upload Logo
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => handleLogoUpload(e.target.files?.[0] || null)}
-            />
+            <input type="file" accept="image/*" className="hidden"
+              onChange={(e) => handleLogoUpload(e.target.files?.[0] || null)} />
           </label>
 
           <label className="flex items-center gap-2 px-3 py-1 border rounded cursor-pointer">
             <Camera /> Upload Signature
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => handleSignatureUpload(e.target.files?.[0] || null)}
-            />
+            <input type="file" accept="image/*" className="hidden"
+              onChange={(e) => handleSignatureUpload(e.target.files?.[0] || null)} />
           </label>
 
           <button onClick={handlePrint} className="bg-blue-600 text-white px-3 py-1 rounded flex items-center gap-2">
@@ -249,14 +244,17 @@ export default function InvoicePage({
           <button onClick={handleFinalize} className="bg-green-600 text-white px-3 py-1 rounded ml-2">
             Finalize & Clear
           </button>
+
         </div>
       </div>
 
-      {/* Invoice layout */}
+      {/* Invoice Layout */}
       <div className="bg-white p-6" style={{ maxWidth: 900, margin: "0 auto", boxShadow: "0 2px 6px rgba(0,0,0,0.08)" }}>
-        {/* Header: left company, right invoice details */}
+
+        {/* Header */}
         <div className="flex justify-between items-start mb-6">
           <div className="flex gap-4 items-start">
+
             <div style={{ width: 120, height: 120, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #eee" }}>
               {logoPreview ? (
                 <img src={logoPreview} alt="logo" style={{ maxWidth: "100%", maxHeight: "100%" }} />
@@ -289,12 +287,23 @@ export default function InvoicePage({
           </div>
         </div>
 
-        {/* Bill To / Ship To */}
+        {/* BILL TO / SHIP TO */}
         <div className="grid grid-cols-2 gap-4 mb-4">
+
           <div className="border rounded p-3">
             <div className="text-xs text-blue-700 font-semibold mb-1">BILL TO</div>
-            <input value={billTo} onChange={(e) => setBillTo(e.target.value)} className="w-full border-b mb-2" />
-            <textarea value={billAddress} onChange={(e) => setBillAddress(e.target.value)} className="w-full text-sm" />
+
+            {/* Searchable Dropdown */}
+            <SearchableDropdown
+              list={hospitalList}
+              value={billTo}
+              onSelect={(val) => {
+                setBillTo(val);
+                setShipTo(val);
+              }}
+            />
+
+            <textarea value={billAddress} onChange={(e) => setBillAddress(e.target.value)} className="w-full text-sm mt-2" />
           </div>
 
           <div className="border rounded p-3">
@@ -302,11 +311,12 @@ export default function InvoicePage({
             <input value={shipTo} onChange={(e) => setShipTo(e.target.value)} className="w-full border-b mb-2" />
             <textarea value={shipAddress} onChange={(e) => setShipAddress(e.target.value)} className="w-full text-sm" />
           </div>
+
         </div>
 
         {/* Items table */}
         <div className="overflow-x-auto mb-4">
-          <table className="w-full border-collapse" style={{ borderSpacing: 0 }}>
+          <table className="w-full border-collapse">
             <thead>
               <tr style={{ background: "#e6f0fb" }}>
                 <th className="p-2 text-left text-sm border-b">S.NO.</th>
@@ -352,7 +362,7 @@ export default function InvoicePage({
           </table>
         </div>
 
-        {/* Subtotal and GST split */}
+        {/* Subtotal + Tax */}
         <div className="flex justify-between items-start gap-6">
           <div style={{ width: "55%" }}>
             <div className="bg-gray-50 p-3 rounded text-sm">
@@ -393,7 +403,7 @@ export default function InvoicePage({
           </div>
         </div>
 
-        {/* Amount in words and signature */}
+        {/* Amount in words */}
         <div className="flex justify-between items-end mt-6">
           <div>
             <div className="text-sm font-semibold mb-1">Amount (in words)</div>
@@ -411,12 +421,10 @@ export default function InvoicePage({
         </div>
       </div>
 
-      {/* Print-only small note */}
       <style>{`
         @media print {
           body { -webkit-print-color-adjust: exact; }
           .print\\:hidden { display: none !important; }
-          /* Ensure invoice prints with white background */
           html, body { background: white; }
         }
       `}</style>
