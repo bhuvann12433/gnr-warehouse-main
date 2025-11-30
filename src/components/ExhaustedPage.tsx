@@ -6,15 +6,20 @@ interface Props {
 }
 
 const ExhaustedPage: React.FC<Props> = ({ items }) => {
+  // ⭐ Filter zero OR negative available stock
+  const exhaustedItems = items.filter(
+    (item) => Number(item.statusCounts.available) <= 0
+  );
+
   return (
     <div className="p-6">
       <h1 className="text-xl font-bold mb-4">Exhausted Items</h1>
 
-      {items.length === 0 ? (
+      {exhaustedItems.length === 0 ? (
         <p className="text-gray-500">No exhausted items found.</p>
       ) : (
         <ul className="space-y-3">
-          {items.map((item) => (
+          {exhaustedItems.map((item) => (
             <li
               key={item._id}
               className="p-4 border rounded-md bg-red-50 flex justify-between items-center"
@@ -22,6 +27,13 @@ const ExhaustedPage: React.FC<Props> = ({ items }) => {
               <div>
                 <p className="font-semibold text-gray-800">{item.name}</p>
                 <p className="text-sm text-gray-500">{item.category}</p>
+
+                {/* Show available number if it's negative */}
+                {Number(item.statusCounts.available) < 0 && (
+                  <p className="text-xs text-red-700">
+                    Stock level: {item.statusCounts.available}
+                  </p>
+                )}
               </div>
 
               <span className="text-red-600 font-bold">OUT OF STOCK</span>
