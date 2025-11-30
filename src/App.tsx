@@ -380,7 +380,8 @@ function App() {
           path="/exhausted"
           element={
             <ExhaustedPage
-              items={equipment.filter((i) => i.statusCounts.available === 0)}
+              items={equipment.filter((i) => i.statusCounts.available <= 0)}
+
             />
           }
         />
